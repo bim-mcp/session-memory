@@ -14,17 +14,30 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
 
   async generate(text: string): Promise<number[]> {
     const url = `${config.ollamaUrl}/api/embeddings`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: config.ollamaModel, prompt: text }),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), config.embeddingTimeout);
 
-    if (!response.ok) {
-      throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: config.ollamaModel, prompt: text }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = (await response.json()) as OllamaEmbeddingResponse;
+      return data.embedding;
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new Error(`Ollama embedding timed out after ${config.embeddingTimeout}ms`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
     }
-
-    const data = (await response.json()) as OllamaEmbeddingResponse;
-    return data.embedding;
   }
 }

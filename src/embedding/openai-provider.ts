@@ -8,7 +8,11 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
   constructor(apiKey: string, dimensions: number) {
     this.dimensions = dimensions;
-    this.client = new OpenAI({ apiKey });
+    this.client = new OpenAI({
+      apiKey,
+      timeout: config.embeddingTimeout,
+      maxRetries: 1,
+    });
   }
 
   async generate(text: string): Promise<number[]> {

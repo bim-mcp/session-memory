@@ -2,7 +2,8 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import type { StorageAdapter, Session, Message, MemoryEntry, MemorySearchResult } from './types.js';
+import { getCurrentUserId } from '../context.js';
+import type { StorageAdapter, Session, Message, MemoryEntry, MemorySearchResult, StorageStats } from './types.js';
 
 export class SqliteAdapter implements StorageAdapter {
   private db: Database.Database;
@@ -23,6 +24,8 @@ export class SqliteAdapter implements StorageAdapter {
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL DEFAULT '',
+        user_id TEXT NOT NULL DEFAULT '',
+        tags TEXT NOT NULL DEFAULT '[]',
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
@@ -50,15 +53,19 @@ export class SqliteAdapter implements StorageAdapter {
     }
   }
 
-  async createSession(id?: string, title?: string): Promise<Session> {
+  async createSession(id?: string, title?: string, tags?: string[]): Promise<Session> {
     const sessionId = id || crypto.randomUUID();
+    const userId = getCurrentUserId();
     const now = new Date().toISOString();
+    const tagsJson = JSON.stringify(tags || []);
 
-    this.db.prepare(
-      'INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)'
-    ).run(sessionId, title || '', now, now);
+    this.db.prepare(`
+      INSERT INTO sessions (id, title, user_id, tags, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at
+    `).run(sessionId, title || '', userId, tagsJson, now, now);
 
-    return { id: sessionId, title: title || '', createdAt: now, updatedAt: now };
+    return { id: sessionId, title: title || '', userId, tags: tags || [], createdAt: now, updatedAt: now };
   }
 
   async getSession(sessionId: string): Promise<Session | null> {
@@ -78,11 +85,17 @@ export class SqliteAdapter implements StorageAdapter {
     sessionId: string,
     role: string,
     content: string,
+    tags?: string[],
     metadata?: Record<string, unknown>
   ): Promise<Message> {
     const session = await this.getSession(sessionId);
     if (!session) {
-      await this.createSession(sessionId);
+      await this.createSession(sessionId, '', tags);
+    } else if (tags && tags.length > 0) {
+      const merged = [...new Set([...session.tags, ...tags])];
+      this.db.prepare(
+        "UPDATE sessions SET tags = ?, updated_at = ? WHERE id = ?"
+      ).run(JSON.stringify(merged), new Date().toISOString(), sessionId);
     }
 
     const metaStr = metadata ? JSON.stringify(metadata) : null;
@@ -116,18 +129,30 @@ export class SqliteAdapter implements StorageAdapter {
     this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
   }
 
-  async storeMemory(_sessionId: string, _content: string, _metadata?: Record<string, unknown>): Promise<MemoryEntry> {
+  async getStats(): Promise<StorageStats> {
+    const sessionCount = (this.db.prepare('SELECT COUNT(*) as count FROM sessions').get() as Record<string, unknown>).count as number;
+    const messageCount = (this.db.prepare('SELECT COUNT(*) as count FROM messages').get() as Record<string, unknown>).count as number;
+    return { sessionCount, messageCount, memoryCount: 0, uptime: Math.floor(process.uptime()) };
+  }
+
+  async storeMemory(_sessionId: string, _content: string, _tags?: string[], _metadata?: Record<string, unknown>): Promise<MemoryEntry> {
     throw new Error('Semantic memory requires PostgreSQL storage (MEMORY_STORAGE=postgresql)');
   }
 
-  async searchMemory(_query: string, _limit?: number): Promise<MemorySearchResult[]> {
+  async searchMemory(_query: string, _limit?: number, _filterUserId?: string, _filterTags?: string[]): Promise<MemorySearchResult[]> {
     throw new Error('Semantic search requires PostgreSQL storage (MEMORY_STORAGE=postgresql)');
   }
 
   private mapSession(row: Record<string, unknown>): Session {
+    let tags: string[] = [];
+    try {
+      tags = JSON.parse(row.tags as string);
+    } catch { /* ignore */ }
     return {
       id: row.id as string,
       title: row.title as string,
+      userId: row.user_id as string,
+      tags,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
     };
