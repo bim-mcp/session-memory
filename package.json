@@ -1,0 +1,40 @@
+{
+  "name": "session-memory",
+  "version": "1.0.0",
+  "description": "MCP Server for shared memory across AI agents",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bim-mcp/session-memory.git"
+  },
+  "keywords": ["mcp", "memory", "ai", "claude", "copilot"],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/bim-mcp/session-memory/issues"
+  },
+  "homepage": "https://github.com/bim-mcp/session-memory#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.11.1",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "openai": "^6.46.0",
+    "pg": "^8.22.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.15.3",
+    "@types/pg": "^8.11.14",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}
